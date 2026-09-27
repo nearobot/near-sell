@@ -67,10 +67,10 @@ async function setup(config: Config) {
   if (!config.vaultPassword) assert(password === await ask('Repeat passphrase (hidden): ', true), 'Passphrases do not match.');
   saveVault(vaultPath, { token, owner: identity.owner, fastnearApiKey: apiKey, wallets: [] }, password);
   const store = new Store(path.join(dataDir, 'bot.sqlite')); store.set('telegramOffset', identity.offset); store.close();
-  console.log(`Setup saved. Owner: ${identity.owner}. Bot: https://t.me/${identity.username}\nNext: run pnpm run import, then pnpm dev --paper.`);
+  console.log(`Setup saved. Owner: ${identity.owner}. Bot: https://t.me/${identity.username}\nNext: run npm run import, then npm run dev -- --paper.`);
 }
 async function unlock(config: Config) {
-  assert(fs.existsSync(vaultPath), 'Run pnpm run setup first.');
+  assert(fs.existsSync(vaultPath), 'Run npm run setup first.');
   const password = config.vaultPassword ?? await ask('Vault passphrase (hidden): ', true);
   return { password, vault: loadVault(vaultPath, password) };
 }

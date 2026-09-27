@@ -409,7 +409,7 @@ export class Bot {
   async importHelp() {
     this.flow = null;
     return this.send('<b>🔑 ENABLE WALLET TRADING</b>\n\n' +
-      '1. Stop the bot on your PC or VPS.\n2. In the project terminal run:\n<code>pnpm run import</code>\n' +
+      '1. Stop the bot on your PC or VPS.\n2. In the project terminal run:\n<code>npm run import</code>\n' +
       '3. Enter your vault password and wallet key locally.\n4. Restart the bot, then choose your wallet.\n\n' +
       'Use Watch a wallet to view balances right away. Wallet secrets stay in your encrypted vault; do not paste them into this chat.',
       keyboard([[button('👁 Watch a wallet', 'watch')], footer(button('‹ Wallets', 'wallets'))]));
@@ -475,7 +475,7 @@ export class Bot {
   async text(text: string): Promise<unknown> {
     assert(text.length <= 500, 'Message too long. Send one value at a time.');
     if (/ed25519:|\b(seed|mnemonic|private.?key)\b/i.test(text) || (!text.startsWith('/') && text.trim().split(/\s+/).length >= 12)) {
-      throw new AppError('Import wallet secrets using pnpm run import on your PC/VPS. Do not send them to Telegram.');
+      throw new AppError('Import wallet secrets using npm run import on your PC/VPS. Do not send them to Telegram.');
     }
     if (!text.startsWith('/') && this.flow) {
       assert(this.flow.expiresAt > Date.now(), 'This form expired. Open Home to begin again.');

@@ -7,6 +7,7 @@ const stateName = (value: unknown) => typeof value === 'string' && /^[A-Za-z_]{1
 export class Market {
  rpc: RpcPort; fetchImpl: FetchLike; fastnearApiKey: string;
  cache = new Map<string, TokenMetadata>(); ratesCache?: {prices: PriceList; at: number};
+ private ratesPending?: Promise<{prices: PriceList; at: number}>;
   constructor(rpc: RpcPort, { fetchImpl = fetch, fastnearApiKey = '' }: { fetchImpl?: FetchLike; fastnearApiKey?: string } = {}) { this.rpc = rpc; this.fetchImpl = fetchImpl; this.fastnearApiKey = fastnearApiKey; this.cache = new Map(); }
   async get<T>(url: string): Promise<T> { return jsonRequest<T>(url, {}, { fetchImpl: this.fetchImpl }); }
   async metadata(token: string, block?: Block): Promise<TokenMetadata> {
@@ -21,9 +22,13 @@ export class Market {
   }
   async rates() {
     const cached = this.ratesCache; if (cached && Date.now() - cached.at < 20000) return cached;
-    const prices = await this.get<PriceList>('https://api.ref.finance/list-token-price');
-    assert(prices && typeof prices === 'object' && !Array.isArray(prices), 'USD prices are unavailable.', 'NO_PRICE');
-    const value = { prices, at: Date.now() }; this.ratesCache = value; return value;
+    if (this.ratesPending) return this.ratesPending;
+    this.ratesPending = (async () => {
+      const prices = await jsonRequest<PriceList>('https://api.ref.finance/list-token-price', {}, { fetchImpl: this.fetchImpl, context: 'Rhea USD prices', retryRead: true });
+      assert(prices && typeof prices === 'object' && !Array.isArray(prices), 'USD prices are unavailable.', 'NO_PRICE');
+      const value = { prices, at: Date.now() }; this.ratesCache = value; return value;
+    })();
+    try { return await this.ratesPending; } finally { this.ratesPending = undefined; }
   }
   async usd(token: string) {
     const rates = await this.rates(), p = rates.prices[token === 'native.near' ? WNEAR : token]?.price;

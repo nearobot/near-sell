@@ -1,16 +1,16 @@
 # NEAR Target Telegram Bot
 
-Personal Telegram bot built with **TypeScript (strict)** and **pnpm** for NEAR mainnet: import wallets locally, discover fungible tokens, view indicative USD balances, and set automatic sell targets for Nearly and Umbra tokens. Sell proceeds stay in the token's paired asset, as requested.
+Personal Telegram bot built with **TypeScript (strict)** and **npm** for NEAR mainnet: import wallets locally, discover fungible tokens, view indicative USD balances, and set automatic sell targets for Nearly and Umbra tokens. Sell proceeds stay in the token's paired asset, as requested.
 
 ## প্রথমবার চালু করা
 
-Node.js **24+** এবং pnpm **10** লাগবে। Project folder: `N:\Codex\near-sell-bot`। অন্য PC-তে কপি করলে প্রথমে ওই folder-এ `pnpm install --frozen-lockfile --ignore-scripts` চালাও।
+Node.js **24+** এবং npm **11+** লাগবে। Project folder: `N:\Codex\near-sell-bot`। অন্য PC-তে কপি করলে প্রথমে ওই folder-এ `npm ci --ignore-scripts` চালাও।
 
 1. Telegram-এ **@BotFather → /newbot** দিয়ে নিজের bot তৈরি করো। Project-এর `.env`-এ `TELEGRAM_BOT_TOKEN` বসাও; `.env` না থাকলে `.env.example` কপি করে নাম দাও `.env`।
-2. **`pnpm run setup`** চালাও। Terminal-এ দেখানো `/pair ...` message নিজের bot-এর private chat-এ পাঠাও। তারপর একটি vault password দাও। `.env`-এ token ফাঁকা রাখলে terminal-এ সেটি চাইবে।
-3. **`pnpm run import`** চালিয়ে password, seed/private key এবং NEAR wallet address দাও। Address ফাঁকা রাখলে public key দিয়ে account খুঁজবে। একাধিক wallet import করা যায়।
-4. **`pnpm dev`** অথবা **`pnpm start`** চালিয়ে Telegram-এ `/start` দাও। Default `.env`-এ `BOT_MODE=paper` আছে। **Wallets → wallet বেছে নাও → token → Set target** দিয়ে flow পরীক্ষা করো। একটি wallet থাকলে নিজেই select হবে। **pnpm dev --paper** সবসময় paper mode-এ চালায়।
-5. বাস্তব auto-sell চালাতে paper window-তে Ctrl+C দিয়ে বন্ধ করে **pnpm start:live** চালাও। তারপর Telegram-এ নতুন **LIVE target** বানিয়ে **Activate LIVE sell** চাপো। Paper target কখনো নিজে থেকে live হবে না।
+2. **`npm run setup`** চালাও। Terminal-এ দেখানো `/pair ...` message নিজের bot-এর private chat-এ পাঠাও। তারপর একটি vault password দাও। `.env`-এ token ফাঁকা রাখলে terminal-এ সেটি চাইবে।
+3. **`npm run import`** চালিয়ে password, seed/private key এবং NEAR wallet address দাও। Address ফাঁকা রাখলে public key দিয়ে account খুঁজবে। একাধিক wallet import করা যায়।
+4. **`npm run dev`** অথবা **`npm start`** চালিয়ে Telegram-এ `/start` দাও। Default `.env`-এ `BOT_MODE=paper` আছে। **Wallets → wallet বেছে নাও → token → Set target** দিয়ে flow পরীক্ষা করো। একটি wallet থাকলে নিজেই select হবে। **npm run dev -- --paper** সবসময় paper mode-এ চালায়।
+5. বাস্তব auto-sell চালাতে paper window-তে Ctrl+C দিয়ে বন্ধ করে **npm run start:live** চালাও। তারপর Telegram-এ নতুন **LIVE target** বানিয়ে **Activate LIVE sell** চাপো। Paper target কখনো নিজে থেকে live হবে না।
 
 এই PC এবং bot-এর window চালু থাকতে হবে। Window বন্ধ/PC sleep/off হলে নতুন target monitor বা sell হবে না। Private key Telegram দিয়ে import করা হয় না; এই PC-র encrypted vault দিয়ে import হয়।
 
@@ -24,12 +24,34 @@ Node.js **24+** এবং pnpm **10** লাগবে। Project folder: `N:\Cod
 - **Wallets:** wallet বদলাও বা public address দিয়ে watch wallet যোগ করো। **Add token** দিয়ে indexer-এ না আসা token contract যোগ করা যায়। Private key import-এর নির্দেশনা আলাদা Help button-এ আছে।
 - **Settings / Activity:** slippage ও price-impact defaults buttons দিয়ে বদলাও; execution history ও pending transaction checks দেখো। Settings-এর পরিবর্তন নতুন targets-এর জন্য প্রযোজ্য।
 
-VPS-এ নতুন source files আপলোড করার পরে, আগের `.env` ও `data/` রেখে bot process restart করো। তোমার PM2 bot-এর ID `0` হলে:
+VPS-এ নতুন source files, `package.json` ও `package-lock.json` আপলোড করো। আগের `.env` ও `data/` রেখো। Node.js 24+ এবং npm 11+ লাগবে; `node -v` ও `npm -v` দিয়ে দেখো।
+
+আগের PM2 process pnpm দিয়ে চালু হয়ে থাকলে একবার নিচের commands চালাও। `pm2 list`-এ এই bot-এর ID `0` হলে:
 
 ```bash
 cd ~/near-sell
-pnpm build && pm2 restart 0 --update-env
-pm2 logs 0 --lines 30
+pm2 stop 0
+npm ci --ignore-scripts && npm run build
+```
+
+Install ও build সফল হলে পুরোনো launcher বদলাও:
+
+```bash
+pm2 delete 0
+pm2 start dist/cli.js --name near-sell --interpreter node -- start
+pm2 save
+pm2 logs near-sell --lines 50
+```
+
+PM2 compiled JavaScript চালাবে; `.env`-এর `BOT_MODE` ব্যবহার হবে। Unattended startup-এর জন্য `VAULT_PASSWORD` আগের মতো `.env` বা process environment-এ থাকতে হবে। Wallet import/setup আবার করতে হবে না।
+
+এরপর source/dependency update করলে:
+
+```bash
+cd ~/near-sell
+pm2 stop near-sell
+npm ci --ignore-scripts && npm run build && pm2 restart near-sell --update-env
+pm2 logs near-sell --lines 30
 ```
 
 তারপর Telegram-এ `/start` দাও। পুরোনো message-এর form buttons-এর বদলে নতুন menu ব্যবহার করো।
@@ -39,6 +61,10 @@ If an older version reports **“Target … is waiting: Invalid on-chain token a
 An older version could also report **“This Nearly launch is not ready for trading”** for a completed launch with the factory's `inflight` flag set. Readiness now checks `step=Done` and verifies that the exact DCL pair is `Running`. Failed or incomplete launches remain blocked. Waiting notices include the token and mode, and obsolete errors clear when monitoring successfully returns to waiting for the target value.
 
 Target reviews, lists, details, activity and notifications show the token name and symbol alongside the target ID. New targets save `tokenName` and `tokenSymbol` with the rule; older targets fill these display fields from token metadata when viewed or monitored. Metadata lookup failure leaves the contract visible and does not suppress an error or trade confirmation. The stored fields can also be included in read-only terminal queries of the target's JSON body.
+
+For provider errors, inspect PM2 output with `pm2 logs near-sell --lines 100` (`Ctrl+C` exits the log viewer while the bot continues). Run `npm run diagnose -- TARGET_ID` to check a saved target's live reads and quote, or `npm run diagnose -- umbra.umbrafun.near` for a public example quote. Diagnosis can run while the bot runs: it opens the target database read-only, never opens the vault, and never signs or submits a transaction. It reports provider hostname, RPC method and HTTP status while omitting URL paths, query strings, headers and request bodies. It uses the current shell/project `.env` RPC configuration; a key stored only in the encrypted vault is not loaded.
+
+Default RPC reads can fail over across FastNEAR, Shitzu and Intear. A failing provider is skipped for 30 seconds when another is available. Explicit `NEAR_RPC_URLS` replaces that list, so leave it blank to use the built-in fallback providers. Rhea USD-price GET requests retry once after a temporary network/5xx error, and concurrent price lookups share a request. Expired prices are not used to continue trading. A transaction is submitted once to one available provider; an uncertain submission is reconciled by hash and never retried against another provider.
 
 ## Environment and run commands
 
@@ -59,19 +85,19 @@ VAULT_PASSWORD=
 | `BOT_MODE` | `paper` (default) or `live`. Live mode executes only activated live targets. `--paper` / `--live` overrides this value. |
 | `POLL_INTERVAL_MS` | Delay between monitor cycles; integer from 1000 to 300000. Default 10000. |
 | `FASTNEAR_API_KEY` | Optional setup/runtime key. Blank uses the saved vault key, or public endpoints if none is saved. |
-| `NEAR_RPC_URLS` | Optional comma-separated HTTPS NEAR mainnet RPC URLs. Blank uses built-in FastNEAR endpoints. |
+| `NEAR_RPC_URLS` | Optional comma-separated HTTPS NEAR mainnet RPC URLs. Blank uses FastNEAR, Shitzu and Intear fallback endpoints. |
 | `VAULT_PASSWORD` | Optional setup/unlock passphrase. Blank prompts locally. A value here is stored as plaintext in `.env`; quote values containing `#` or surrounding spaces. |
 
-Seed phrases and private keys are imported with `pnpm run import` and saved in the encrypted vault. `.env` is ignored by Git; `.env.example` is the shareable blank template. Bot token and API key values placed in `.env` also remain plaintext there; setup saves an encrypted copy in the vault.
+Seed phrases and private keys are imported with `npm run import` and saved in the encrypted vault. `.env` is ignored by Git; `.env.example` is the shareable blank template. Bot token and API key values placed in `.env` also remain plaintext there; setup saves an encrypted copy in the vault.
 
 After the one-time setup/import, run either command:
 
 ```powershell
-pnpm dev    # Run TypeScript source using BOT_MODE
-pnpm start  # Build, then run compiled JavaScript using BOT_MODE
+npm run dev    # Run TypeScript source using BOT_MODE
+npm start  # Build, then run compiled JavaScript using BOT_MODE
 ```
 
-Run one at a time. To force a mode, use `pnpm dev --paper`, `pnpm start --paper`, `pnpm dev:live` or `pnpm start:live`.
+Run one at a time. To force a mode, use `npm run dev -- --paper`, `npm start -- --paper`, `npm run dev:live` or `npm run start:live`.
 
 ## Targets
 
@@ -140,39 +166,41 @@ USD conversions come from Rhea's public price API, refreshed every 20 seconds. T
 - `data/vault.json` uses AES-256-GCM with scrypt (`N=131072, r=8, p=1`) and a random salt/nonce. It contains bot credentials and derived private keys. Seed phrases themselves are not saved. The password is requested locally at startup unless you supply `VAULT_PASSWORD` in the environment. JavaScript cannot promise immediate secret-memory zeroization.
 - Keys never go to Telegram, RPCs, indexers, history, exports or logs. Public wallet addresses go to FastNEAR/NEAR RPCs; balances and target details go to your private Telegram bot chat. Only signed transactions are broadcast.
 - `data/bot.sqlite` stores public wallet IDs, targets, update offsets, execution history, signed transaction bytes and hashes. WAL/FULL synchronization commits the exact signed payload **before** broadcast. Network submission has no automatic retry or re-signing.
-- Unknown outcomes block further orders on that wallet and are checked by transaction hash. A zero-consumption FT refund is not marked filled. A final failed receipt or unverifiable payout requires review. After inspecting its final receipts, stop the bot and run **pnpm review** to acknowledge it locally and cancel that target. This never repeats a trade.
+- Unknown outcomes block further orders on that wallet and are checked by transaction hash. A zero-consumption FT refund is not marked filled. A final failed receipt or unverifiable payout requires review. After inspecting its final receipts, stop the bot and run **npm run review** to acknowledge it locally and cancel that target. This never repeats a trade.
 - An exclusive SQLite lock prevents two instances/importers using the same data directory at once. Keep the entire `data` folder backed up while the bot is stopped. Do not delete history or lock databases to bypass pending-state protection.
 - This is a single-owner local bot, not a hosted multi-user custody service. No vault, bot token or actual wallet has been configured during development.
 
 ## Development and validation
 
-Node.js **24+**, pnpm **10.18.3**, TypeScript **5.9.3**. Dependencies are pinned in `pnpm-lock.yaml`; the package manager version is recorded in `package.json`.
+Node.js **24+**, npm **11+** (lockfile generated with **11.16.0**), TypeScript **5.9.3**. Dependencies are pinned in `package-lock.json`; the package manager version is recorded in `package.json`.
 
 ```powershell
 cd N:\Codex\near-sell-bot
-pnpm install --frozen-lockfile --ignore-scripts
-pnpm check
+npm ci --ignore-scripts
+npm run check
 ```
 
-`pnpm check` runs strict type checking for source, scripts and tests, builds to `dist/`, then runs all offline tests. Source imports use `.ts`; the compiler rewrites them to `.js` for the production build. Node 24 runs development TypeScript directly with native type stripping; `pnpm typecheck` performs the separate type check.
+`npm run check` runs strict type checking for source, scripts and tests, builds to `dist/`, then runs all offline tests. Source imports use `.ts`; the compiler rewrites them to `.js` for the production build. Node 24 runs development TypeScript directly with native type stripping; `npm run typecheck` performs the separate type check.
 
 | Command | Purpose |
 |---|---|
-| `pnpm run setup` | Pair your Telegram bot and create the encrypted vault |
-| `pnpm run import` | Import a wallet through hidden local prompts |
-| `pnpm dev` | Run TypeScript source using `.env` mode (default paper) |
-| `pnpm dev:live` | Run TypeScript source in live mode |
-| `pnpm build` | Compile production JavaScript into `dist/` |
-| `pnpm start` | Build and run compiled JavaScript using `.env` mode (default paper) |
-| `pnpm start:live` | Build and run compiled JavaScript in live mode |
-| `pnpm review` | Review a final unresolved execution locally |
-| `pnpm typecheck` | Check all TypeScript without emitting files |
-| `pnpm test` | Run offline tests against TypeScript source |
-| `pnpm check:public` | Read-only public discovery and quote checks |
+| `npm run setup` | Pair your Telegram bot and create the encrypted vault |
+| `npm run import` | Import a wallet through hidden local prompts |
+| `npm run dev` | Run TypeScript source using `.env` mode (default paper) |
+| `npm run dev:live` | Run TypeScript source in live mode |
+| `npm run build` | Compile production JavaScript into `dist/` |
+| `npm start` | Build and run compiled JavaScript using `.env` mode (default paper) |
+| `npm run start:live` | Build and run compiled JavaScript in live mode |
+| `npm run review` | Review a final unresolved execution locally |
+| `npm run diagnose -- TARGET_ID` | Trace read-only requests and quotes for a saved target; no vault or signing |
+| `npm run diagnose -- token.contract.near` | Trace an illustrative public quote without a local target |
+| `npm run typecheck` | Check all TypeScript without emitting files |
+| `npm test` | Run offline tests against TypeScript source |
+| `npm run check:public` | Read-only public discovery and quote checks |
 
-`pnpm start` and `pnpm start:live` build automatically and stop if compilation fails. Both source and compiled entry points use the same project-root `.env` and `data/` directory.
+`npm start` and `npm run start:live` build automatically and stop if compilation fails. Both source and compiled entry points use the same project-root `.env` and `data/` directory.
 
-Use the full `pnpm run setup` and `pnpm run import` commands: `setup` and `import` also name built-in pnpm commands.
+Use `npm run SCRIPT` for custom scripts. Pass script arguments after `--`, for example `npm run diagnose -- TARGET_ID`.
 
 Offline tests exercise authorization, seed/key validation, encrypted-vault tamper rejection, exact integer amounts, target semantics, real SDK signing with synthetic keys, slippage/tax, gas checks, storage caps, persistence/restart behavior, duplicate prevention, refunds and payout verification. Mock Telegram tests cover the dashboard, token picker, guided form, Back/Cancel and stale buttons, target controls, pagination, settings, HTML escaping and message editing with fallback.
 
@@ -183,6 +211,7 @@ Implementation references verified on 2026-09-27:
 - [Nearly documentation](https://nearly.trade/docs), its deployed public client and `nearlytrade.near` factory views.
 - [Umbra](https://umbrapad.app/), its deployed public client, and public `get_curve_state` / `get_pool` responses.
 - [NEAR RPC](https://docs.near.org/api/rpc/contracts) and [transaction RPC](https://docs.near.org/api/rpc/transactions).
+- [NEAR public RPC providers](https://docs.near.org/api/rpc/providers), with read-only checks of the added Shitzu and Intear fallbacks.
 - [FastNEAR account/FT API](https://github.com/fastnear/fastnear-api-server-rs).
 - [Rhea/Ref SDK](https://github.com/ref-finance/ref-sdk) for DCL and simple-pool transaction shapes.
 - [Telegram Bot API](https://core.telegram.org/bots/api).

@@ -34,6 +34,6 @@ test('Telegram token form handles market-cap and exact-quantity selection', asyn
 test('wallet secrets sent to Telegram are never echoed or stored', async () => {
   const { store, messages, bot } = botHarness();
   const sensitive = 'ed25519:synthetic-private-input'; await bot.handle(update(sensitive));
-  assert.equal(messages.length, 1); assert.equal(messages[0].text.includes(sensitive), false); assert.match(messages[0].text, /pnpm run import/);
+  assert.equal(messages.length, 1); assert.equal(messages[0].text.includes(sensitive), false); assert.match(messages[0].text, /npm run import/);
   assert.equal(store.wallets().length, 0); store.close();
 });
