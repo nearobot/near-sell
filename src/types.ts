@@ -69,6 +69,7 @@ export interface RpcPort {
   status(hash: string, account: string): Promise<TransactionResult>;
 }
 export interface AccountState { amount: string; locked: string; storage_usage: number }
+export interface ProtocolConfig { runtime_config: { storage_amount_per_byte: string } }
 export interface AccessKey { permission: unknown; nonce: number; block_hash: string }
 export interface NearlyLaunch { token: string; id: number; quote: string; pool_id: string; total_supply: string; step: string; inflight: boolean }
 export interface SimplePool { pool_kind: string; token_account_ids: string[]; amounts: string[] }
@@ -82,10 +83,11 @@ export interface Settings { selectedWallet: string; paused: boolean; telegramOff
 export interface InlineButton { text: string; callback_data: string }
 export interface InlineKeyboard { inline_keyboard: InlineButton[][] }
 export interface TelegramUser { id: number; is_bot?: boolean }
-export interface TelegramMessage { chat: { id: number; type: string }; from?: TelegramUser; text?: string }
+export interface TelegramMessage { message_id?: number; chat: { id: number; type: string }; from?: TelegramUser; text?: string }
 export interface TelegramUpdate { update_id?: number; message?: TelegramMessage; callback_query?: { id: string; from?: TelegramUser; message?: TelegramMessage; data?: string } }
-export interface TelegramMethods { getMe: { username: string }; getWebhookInfo: { url: string }; getUpdates: TelegramUpdate[]; answerCallbackQuery: boolean; sendMessage: unknown }
+export interface TelegramMethods { getMe: { username: string }; getWebhookInfo: { url: string }; getUpdates: TelegramUpdate[]; answerCallbackQuery: boolean; sendMessage: unknown; editMessageText: unknown; setMyCommands: boolean }
+export interface MessageOptions { parse_mode?: 'HTML' }
 export interface TelegramPort {
   call<K extends keyof TelegramMethods>(method: K, body?: Record<string, unknown>): Promise<TelegramMethods[K]>;
-  send(chat: string, text: string, markup?: InlineKeyboard): Promise<unknown>;
+  send(chat: string, text: string, markup?: InlineKeyboard, options?: MessageOptions): Promise<unknown>;
 }

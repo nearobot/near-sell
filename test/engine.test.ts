@@ -15,6 +15,7 @@ import { AppError, raw, human, minOut } from '../src/core.ts';
 const targetInput: TargetConfig = { account: 'alice.near', token: 'test.umbrafun.near', metric: 'holding', direction: 'gte', threshold: '100', quantity: { kind: 'percent', value: '25' }, slippageBps: 200, maxImpactBps: 1500, settlement: 'pair', mode: 'live' };
 const snapshot = testSnapshot;
 const plan = testPlan;
+const protocolConfig = JSON.parse(fs.readFileSync(new URL('./fixtures/public-protocol-config.json', import.meta.url), 'utf8')).result;
 const final = () => ({ final_execution_status:'FINAL', status:{SuccessValue:Buffer.from(JSON.stringify(raw('25').toString())).toString('base64')}, receipts_outcome:[] });
 function harness(mode: Mode = 'live') {
   const store=new Store(); store.addWallet('alice.near'); let broadcasts=0, signs=0;
@@ -121,9 +122,44 @@ test('exclusive database lock blocks a second process session and releases clean
 });
 test('preflight reserves storage, gas and NEAR buffer; rejects low balances',async()=>{
   const key=near.KeyPair.fromRandom('ed25519');let amount=raw('1').toString();
-  const rpc=rpcStub({query:async q=>q.request_type==='view_access_key'?{permission:'FullAccess',nonce:100,block_hash:near.baseEncode(new Uint8Array(32))}:{amount,locked:'0',storage_usage:1000},call:async m=>m==='gas_price'?{gas_price:'100000000'}:{storage_amount_per_byte:'10000000000000000000'}});
+  const rpc=rpcStub({query:async q=>q.request_type==='view_access_key'?{permission:'FullAccess',nonce:100,block_hash:near.baseEncode(new Uint8Array(32))}:{amount,locked:'0',storage_usage:1000},call:async m=>m==='gas_price'?{gas_price:'100000000'}:protocolConfig});
   const executor=new Executor(rpc,new Map([['alice.near',key]]));assert.equal((await executor.prepare(plan())).nonce,101n);
   amount=raw('0.01').toString();await assert.rejects(executor.prepare(plan()),/spendable NEAR/);
+  // 0.01 storage + 0.05 buffered gas + 0.02 reserve + the one-yocto deposit.
+  amount=raw('0.08').toString();await assert.rejects(executor.prepare(plan()),/spendable NEAR/);
+  amount=(raw('0.08')+1n).toString();assert.equal((await executor.prepare(plan())).nonce,101n);
+});
+
+test('live monitoring passes real executor preflight with the public nested protocol response',async t=>{
+  const h=harness();t.after(()=>h.store.close());
+  const rpc=rpcStub({
+    query:async q=>q.request_type==='view_access_key'?{permission:'FullAccess',nonce:100,block_hash:near.baseEncode(new Uint8Array(32))}:{amount:raw('1').toString(),locked:'0',storage_usage:1000},
+    call:async method=>method==='gas_price'?{gas_price:'100000000'}:protocolConfig,
+  });
+  const executor=new Executor(rpc,new Map([['alice.near',near.KeyPair.fromRandom('ed25519')]]));
+  h.executor.prepare=executor.prepare.bind(executor);
+  const originalSign=h.executor.sign;
+  h.executor.sign=async(p,prepared)=>{assert.equal(prepared.nonce,101n);return originalSign(p,prepared);};
+  const target=await arm(h);await h.engine.tick();await h.engine.tick();
+  assert.equal(h.store.target(target.id)?.status,'filled');assert.equal(h.signs,1);assert.equal(h.broadcasts,1);
+});
+
+test('invalid protocol storage prices block live signing with a specific field error',async t=>{
+  const badConfigs: unknown[]=[null,{}, {storage_amount_per_byte:'10000000000000000000'}, {runtime_config:null}, {runtime_config:{}},
+    ...[null,10000000000000000000,'1e19','1.5','-1',''].map(value=>({runtime_config:{storage_amount_per_byte:value}}))];
+  for(const config of badConfigs){
+    const h=harness();t.after(()=>h.store.close());
+    const rpc=rpcStub({
+      query:async q=>q.request_type==='view_access_key'?{permission:'FullAccess',nonce:1,block_hash:near.baseEncode(new Uint8Array(32))}:{amount:raw('1').toString(),locked:'0',storage_usage:1000},
+      call:async method=>method==='gas_price'?{gas_price:'100000000'}:config,
+    });
+    const executor=new Executor(rpc,new Map([['alice.near',near.KeyPair.fromRandom('ed25519')]]));
+    h.executor.prepare=executor.prepare.bind(executor);
+    const target=await arm(h);await h.engine.tick();
+    assert.match(h.store.target(target.id)?.lastError??'',/NEAR storage price \(runtime_config\.storage_amount_per_byte\)/);
+    assert.equal(h.store.target(target.id)?.status,'active');assert.equal(h.store.executions().length,0);
+    assert.equal(h.signs,0);assert.equal(h.broadcasts,0);
+  }
 });
 test('historical public Umbra sell receipt is recognized without signing or broadcasting',()=>{
   const fixture=JSON.parse(fs.readFileSync(new URL('./fixtures/public-ucat-sell.json',import.meta.url),'utf8'));

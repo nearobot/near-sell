@@ -20,11 +20,13 @@ test('private Telegram command → review → activation creates the requested h
 });
 
 test('Telegram token form handles market-cap and exact-quantity selection', async () => {
-  const { store, bot, engine } = botHarness();
+  const { store, bot, engine, messages } = botHarness();
   store.addWallet('alice.near'); store.set('selectedWallet', 'alice.near');
   engine.market.snapshot = async () => testSnapshot({ priceUsd: '1', marketCapUsd: '100', balanceRaw: raw('1000', 18).toString() });
   engine.market.quote = async () => testPlan(raw('250', 18));
-  await bot.beginToken('test.umbrafun.near'); await bot.callback('form:marketcap'); await bot.callback('form:gte'); await bot.text('100000'); await bot.text('250');
+  await bot.beginToken('test.umbrafun.near');
+  const choose = (label: string) => { const b = messages.at(-1)?.markup?.inline_keyboard.flat().find(b => b.text.includes(label)); assert.ok(b); return bot.callback(b.callback_data); };
+  await choose('Market cap'); await choose('At or above'); await bot.text('100000'); await bot.text('250');
   const created = store.targets()[0];
   assert.equal(created.metric, 'marketcap'); assert.deepEqual(created.quantity, { kind: 'tokens', value: '250' }); assert.equal(created.threshold, '100000'); store.close();
 });

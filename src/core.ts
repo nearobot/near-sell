@@ -24,7 +24,7 @@ export function raw(x: string | bigint | number, decimals = 24) {
   return BigInt(n.toFixed(0));
 }
 export function human(x: string | bigint | number, decimals = 24) { return new D(String(x)).div(new D(10).pow(decimals)).toFixed(); }
-export function unsigned(x: unknown) { assert(typeof x === 'string' && /^\d+$/.test(x), 'Invalid on-chain token amount.', 'BAD_DATA'); return BigInt(x); }
+export function unsigned(x: unknown, field = 'on-chain token amount') { assert(typeof x === 'string' && /^\d+$/.test(x), `Invalid ${field}. Expected an unsigned integer string.`, 'BAD_DATA'); return BigInt(x); }
 export function quantity(spec: Quantity, balance: bigint, decimals: number) {
   let result;
   if (spec.kind === 'percent') result = BigInt(new D(String(balance)).mul(decimal(spec.value)).div(100).floor().toFixed(0));

@@ -9,10 +9,32 @@ Node.js **24+** এবং pnpm **10** লাগবে। Project folder: `N:\Cod
 1. Telegram-এ **@BotFather → /newbot** দিয়ে নিজের bot তৈরি করো। Project-এর `.env`-এ `TELEGRAM_BOT_TOKEN` বসাও; `.env` না থাকলে `.env.example` কপি করে নাম দাও `.env`।
 2. **`pnpm run setup`** চালাও। Terminal-এ দেখানো `/pair ...` message নিজের bot-এর private chat-এ পাঠাও। তারপর একটি vault password দাও। `.env`-এ token ফাঁকা রাখলে terminal-এ সেটি চাইবে।
 3. **`pnpm run import`** চালিয়ে password, seed/private key এবং NEAR wallet address দাও। Address ফাঁকা রাখলে public key দিয়ে account খুঁজবে। একাধিক wallet import করা যায়।
-4. **`pnpm dev`** অথবা **`pnpm start`** চালিয়ে Telegram-এ `/start` দাও। Default `.env`-এ `BOT_MODE=paper` আছে। **Wallets → Portfolio → token → target** দিয়ে flow পরীক্ষা করো। **pnpm dev --paper** সবসময় paper mode-এ চালায়।
-5. বাস্তব auto-sell চালাতে paper window-তে Ctrl+C দিয়ে বন্ধ করে **pnpm start:live** চালাও। তারপর Telegram-এ নতুন **LIVE target** বানিয়ে **Activate LIVE auto-sell** চাপো। Paper target কখনো নিজে থেকে live হবে না।
+4. **`pnpm dev`** অথবা **`pnpm start`** চালিয়ে Telegram-এ `/start` দাও। Default `.env`-এ `BOT_MODE=paper` আছে। **Wallets → wallet বেছে নাও → token → Set target** দিয়ে flow পরীক্ষা করো। একটি wallet থাকলে নিজেই select হবে। **pnpm dev --paper** সবসময় paper mode-এ চালায়।
+5. বাস্তব auto-sell চালাতে paper window-তে Ctrl+C দিয়ে বন্ধ করে **pnpm start:live** চালাও। তারপর Telegram-এ নতুন **LIVE target** বানিয়ে **Activate LIVE sell** চাপো। Paper target কখনো নিজে থেকে live হবে না।
 
 এই PC এবং bot-এর window চালু থাকতে হবে। Window বন্ধ/PC sleep/off হলে নতুন target monitor বা sell হবে না। Private key Telegram দিয়ে import করা হয় না; এই PC-র encrypted vault দিয়ে import হয়।
+
+## Telegram-এ ব্যবহার
+
+`/start` দিলে dashboard-এ selected wallet, PAPER/LIVE mode, monitoring status এবং target count দেখাবে। Buttons চাপলে একই menu message update হবে। Telegram-এর command menu থেকেও প্রধান screens খোলা যাবে।
+
+- **My tokens / New target:** token বেছে নাও → **Set target** → market cap বা holdings value → above/below → dollar target → কতটা sell হবে → review করে Activate। Form-এ Back/Cancel আছে; ভুল input দিলে আগের উত্তর হারাবে না।
+- **Sell amount:** 10%, 25%, 50%, 100% buttons আছে। নিজের percentage বা exact token quantity লিখেও দেওয়া যায়।
+- **My targets:** Open/All filter ও pages দিয়ে targets দেখো; একটি target খুলে Activate, Pause, Resume বা Cancel করো। Home থেকে সব monitoring একসঙ্গে Pause/Resume করা যায়।
+- **Wallets:** wallet বদলাও বা public address দিয়ে watch wallet যোগ করো। **Add token** দিয়ে indexer-এ না আসা token contract যোগ করা যায়। Private key import-এর নির্দেশনা আলাদা Help button-এ আছে।
+- **Settings / Activity:** slippage ও price-impact defaults buttons দিয়ে বদলাও; execution history ও pending transaction checks দেখো। Settings-এর পরিবর্তন নতুন targets-এর জন্য প্রযোজ্য।
+
+VPS-এ নতুন source files আপলোড করার পরে, আগের `.env` ও `data/` রেখে bot process restart করো। তোমার PM2 bot-এর ID `0` হলে:
+
+```bash
+cd ~/near-sell
+pnpm build && pm2 restart 0 --update-env
+pm2 logs 0 --lines 30
+```
+
+তারপর Telegram-এ `/start` দাও। পুরোনো message-এর form buttons-এর বদলে নতুন menu ব্যবহার করো।
+
+If an older version reports **“Target … is waiting: Invalid on-chain token amount”** during live preflight, update the source and rebuild/restart using the commands above. This version fixes the NEAR storage-price response path (`runtime_config.storage_amount_per_byte`) and reports specific fields for invalid balances, prices or quotes. Existing active targets are checked again automatically after restart; keep the existing `data/` directory.
 
 ## Environment and run commands
 
@@ -97,8 +119,10 @@ USD conversions come from Rhea's public price API, refreshed every 20 seconds. T
 | `/watch account.near` | Watch-only public account |
 | `/portfolio` | Detect tokens and refresh balances/values |
 | `/track token.contract.near` | Manually add an unindexed FT |
-| `/target CONTRACT mc\|value above\|below USD 25%\|1000` | Create a reviewable target |
-| `/targets` | Status and pause/cancel buttons |
+| `/target` | Open the token picker and guided target form |
+| `/target CONTRACT mc\|value above\|below USD 25%\|1000` | Shortcut to create a reviewable target |
+| `/targets` | Filter, browse and manage targets |
+| `/settings` | Slippage and impact buttons and custom values |
 | `/pause`, `/resume` | Global monitor pause/resume |
 | `/pause ID`, `/resume ID`, `/cancel ID` | Manage a single target |
 | `/history`, `/reconcile` | Final results and pending transaction checks |
@@ -146,7 +170,7 @@ pnpm check
 
 Use the full `pnpm run setup` and `pnpm run import` commands: `setup` and `import` also name built-in pnpm commands.
 
-Offline tests exercise authorization, seed/key validation, encrypted-vault tamper rejection, exact integer amounts, target semantics, real SDK signing with synthetic keys, slippage/tax, gas checks, storage caps, persistence/restart behavior, duplicate prevention, refunds and payout verification.
+Offline tests exercise authorization, seed/key validation, encrypted-vault tamper rejection, exact integer amounts, target semantics, real SDK signing with synthetic keys, slippage/tax, gas checks, storage caps, persistence/restart behavior, duplicate prevention, refunds and payout verification. Mock Telegram tests cover the dashboard, token picker, guided form, Back/Cancel and stale buttons, target controls, pagination, settings, HTML escaping and message editing with fallback.
 
 The read-only public check obtains quotes for eight public tokens across Nearly NEAR/NEARLY/RHEA/ZEC/stock pairs and Umbra curve/graduated pools. It loads **no keys** and contains **no transaction submission**. Actual mainnet sells and a connected Telegram session still need user-side configuration and live acceptance testing; passing a read-only quote test is not proof of an actual fill.
 

@@ -1,4 +1,4 @@
-import type { RpcPort, TransactionResult, Plan, Outcome, AccessKey, AccountState, PreparedTransaction, SignedPayload } from './types.ts';
+import type { RpcPort, TransactionResult, Plan, Outcome, AccessKey, AccountState, ProtocolConfig, PreparedTransaction, SignedPayload } from './types.ts';
 export type OutcomePlan = { kind: 'registration' } | { kind: 'curve' | 'ft'; output: string; account: string; minimumOut: string };
 import * as near from 'near-api-js';
 import { AppError, assert, DCL, RHEA, unsigned, YOCTO } from './core.ts';
@@ -58,13 +58,19 @@ export class Executor {
       this.rpc.query<AccessKey>({ request_type: 'view_access_key', account_id: plan.account, public_key: key.getPublicKey().toString() }),
       this.rpc.query<AccountState>({ request_type: 'view_account', account_id: plan.account }),
       this.rpc.call<{gas_price: string}>('gas_price', [null]),
-      this.rpc.call<{storage_amount_per_byte: string}>('EXPERIMENTAL_protocol_config', { finality: 'final' })
+      this.rpc.call<ProtocolConfig>('EXPERIMENTAL_protocol_config', { finality: 'final' })
     ]);
     assert(access.permission === 'FullAccess' && Number.isSafeInteger(access.nonce), 'Signing key or nonce could not be verified.');
-    const storage = BigInt(state.storage_usage) * unsigned(config.storage_amount_per_byte);
-    const held = storage > unsigned(state.locked) ? storage - unsigned(state.locked) : 0n;
-    const required = BigInt(plan.gas) * unsigned(gas.gas_price) * 2n + YOCTO / 50n + unsigned(plan.deposit);
-    assert(unsigned(state.amount) >= held + required, 'Not enough spendable NEAR for gas and the 0.02 NEAR reserve.');
+    // NEAR returns storage pricing inside runtime_config, not at the response root.
+    const storagePrice = unsigned(config?.runtime_config?.storage_amount_per_byte, 'NEAR storage price (runtime_config.storage_amount_per_byte)');
+    const gasPrice = unsigned(gas?.gas_price, 'NEAR gas price (gas_price)');
+    assert(storagePrice > 0n && gasPrice > 0n, 'NEAR storage and gas prices must be greater than zero.', 'BAD_DATA');
+    assert(Number.isSafeInteger(state?.storage_usage) && state.storage_usage >= 0, 'Invalid NEAR account storage usage.', 'BAD_DATA');
+    const storage = BigInt(state.storage_usage) * storagePrice;
+    const locked = unsigned(state.locked, 'NEAR locked balance (locked)');
+    const held = storage > locked ? storage - locked : 0n;
+    const required = BigInt(plan.gas) * gasPrice * 2n + YOCTO / 50n + unsigned(plan.deposit);
+    assert(unsigned(state.amount, 'NEAR account balance (amount)') >= held + required, 'Not enough spendable NEAR for gas and the 0.02 NEAR reserve.');
     return { key, nonce: BigInt(access.nonce) + 1n, blockHash: access.block_hash };
   }
   async sign(plan: Plan, prepared: PreparedTransaction): Promise<SignedPayload> {

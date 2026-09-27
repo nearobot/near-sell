@@ -115,6 +115,7 @@ async function start(config: Config) {
   process.once('SIGINT', () => { stopping = true; bot.stopping = true; engine.stopping = true; console.log('\nStopping after current work. Pending transaction hashes remain saved.'); });
   process.once('SIGTERM', () => { stopping = true; bot.stopping = true; engine.stopping = true; });
   console.log(`Running ${engine.mode.toUpperCase()}. Keep this window and computer running. Ctrl+C stops the bot.`);
+  await bot.configureMenu().catch(() => console.error('Telegram shortcut menu could not be refreshed. /start still works.'));
   await bot.home();
   const monitor = (async () => {
     while (!stopping) {

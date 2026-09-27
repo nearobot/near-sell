@@ -29,6 +29,16 @@ test('graduated Rhea plan explicitly keeps output in the pair asset',async()=>{
   const plan=await new Market(rpc).quote({...target,token:'test.umbrafun.near'},s,raw('100',18));
   assert.ok(plan.kind === 'ft');const msg=JSON.parse(plan.args.msg);assert.equal(msg.skip_unwrap_near,true);assert.equal(msg.actions[0].token_out,'linear-protocol.near');
 });
+
+test('malformed quote amounts identify the field and never coerce imprecise JSON numbers',async()=>{
+  const rhea: Snapshot={...snap,route:{...snap.route,kind:'rhea',exchange:RHEA,poolId:8691,output:'linear-protocol.near',outSymbol:'LINEAR'}};
+  for(const value of [undefined,null,1000000000000000000000000,'1e24','-1','1.5']){
+    const dclRpc=rpcStub({view:async()=>({amount:value})});
+    await assert.rejects(new Market(dclRpc).quote(target,snap,raw('100',18)),/DCL sell quote \(quote.amount\)/);
+    const rheaRpc=rpcStub({view:async()=>value});
+    await assert.rejects(new Market(rheaRpc).quote({...target,token:'test.umbrafun.near'},rhea,raw('100',18)),/Rhea sell quote \(get_return\)/);
+  }
+});
 test('price impact limit prevents an unexpectedly poor sell',async()=>{
   const rpc=rpcStub({view:async()=>({amount:raw('10').toString()})});
   await assert.rejects(new Market(rpc).quote({...target,maxImpactBps:1000},snap,raw('100',18)),/impact/);

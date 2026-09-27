@@ -49,7 +49,7 @@ export class Market {
     const native = { token: 'native.near', symbol: 'NEAR', decimals: 24, balanceRaw: state.amount, priceUsd: rate?.price ?? null, valueUsd: rate ? new D(human(state.amount)).mul(rate.price).toFixed() : null, route: null };
     const rows = await mapLimit<string, Holding | null>(discovered.tokens, 3, async token => {
       try {
-        const balance = unsigned(await this.rpc.view<string>(token, 'ft_balance_of', { account_id: account }, block));
+        const balance = unsigned(await this.rpc.view<string>(token, 'ft_balance_of', { account_id: account }, block), 'token balance (ft_balance_of)');
         if (balance === 0n) return null;
         const meta = await this.metadata(token, block);
         let pricing;
@@ -84,7 +84,7 @@ export class Market {
     if (token.endsWith('.umbrafun.near')) {
       assert(meta.decimals === 18, 'Unexpected Umbra token decimals.', 'BAD_DATA');
       const curve = await this.rpc.view<CurveState>(token, 'get_curve_state', {}, block);
-      const supply = await this.rpc.view<string>(token, 'ft_total_supply', {}, block); unsigned(supply);
+      const supply = await this.rpc.view<string>(token, 'ft_total_supply', {}, block); unsigned(supply, 'token supply (ft_total_supply)');
       if (!curve.graduated) {
         const output = curve.quote_token || 'native.near', outMeta = await this.metadata(output, block), usd = await this.usd(output);
         const price = new D(human(curve.spot_price, outMeta.decimals));
@@ -106,7 +106,7 @@ export class Market {
   }
   async snapshot(account: string, token: string): Promise<Snapshot> {
     const block = await this.rpc.block();
-    const balanceRaw = await this.rpc.view<string>(token, 'ft_balance_of', { account_id: account }, block); unsigned(balanceRaw);
+    const balanceRaw = await this.rpc.view<string>(token, 'ft_balance_of', { account_id: account }, block); unsigned(balanceRaw, 'token balance (ft_balance_of)');
     const details = await this.details(token, block);
     return { ...details, token, account, balanceRaw, observedAt: Date.now(), blockAt: block.at, block };
   }
@@ -121,10 +121,10 @@ export class Market {
     } else if (r.kind === 'dcl') {
       const net = amount - amount * BigInt(r.sellTaxBps) / 10000n;
       const q = await this.rpc.view<{amount: string}>(DCL, 'quote', { pool_ids: [r.poolId], input_token: target.token, output_token: r.output, input_amount: net.toString(), tag: null }, snapshot.block);
-      out = unsigned(q.amount).toString();
+      out = unsigned(q?.amount, 'DCL sell quote (quote.amount)').toString();
       transaction = {kind: 'ft', method: 'ft_transfer_call', args: { receiver_id: DCL, amount: amount.toString(), msg: JSON.stringify({ Swap: { pool_ids: [r.poolId], output_token: r.output, min_output_amount: minOut(out, target.slippageBps) } }) }};
     } else if (r.kind === 'rhea') {
-      out = String(await this.rpc.view(RHEA, 'get_return', { pool_id: r.poolId, token_in: target.token, amount_in: amount.toString(), token_out: r.output }, snapshot.block)); unsigned(out);
+      out = unsigned(await this.rpc.view(RHEA, 'get_return', { pool_id: r.poolId, token_in: target.token, amount_in: amount.toString(), token_out: r.output }, snapshot.block), 'Rhea sell quote (get_return)').toString();
       
       transaction = {kind: 'ft', method: 'ft_transfer_call', args: { receiver_id: RHEA, amount: amount.toString(), msg: JSON.stringify({ force: 0, actions: [{ pool_id: r.poolId, token_in: target.token, token_out: r.output, amount_in: amount.toString(), min_amount_out: minOut(out, target.slippageBps) }], skip_unwrap_near: true }) }};
     } else throw new AppError('Unsupported route.');
@@ -133,9 +133,9 @@ export class Market {
     let registration: RegistrationPlan | null = null;
     if (r.output !== 'native.near') {
       const storage = await this.rpc.view<{total: string} | null>(r.output, 'storage_balance_of', { account_id: target.account }, snapshot.block);
-      if (!storage || unsigned(storage.total) === 0n) {
+      if (!storage || unsigned(storage.total, 'pair storage balance (storage_balance_of.total)') === 0n) {
         const bounds = await this.rpc.view<{min: string}>(r.output, 'storage_balance_bounds', {}, snapshot.block);
-        const deposit = unsigned(bounds.min);
+        const deposit = unsigned(bounds?.min, 'pair registration cost (storage_balance_bounds.min)');
         assert(deposit > 0n && deposit <= 10n ** 22n, `This pair needs more than 0.01 NEAR storage registration. Register it in your wallet first.`, 'REGISTRATION');
         registration = { kind: 'registration', account: target.account, token: target.token, receiver: r.output, output: r.output, outSymbol: r.outSymbol, symbol: snapshot.symbol, method: 'storage_deposit', args: { account_id: target.account, registration_only: true }, deposit: deposit.toString(), gas: '30000000000000', quotedAt: Date.now(), blockAt: snapshot.blockAt };
       }
