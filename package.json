@@ -1,0 +1,32 @@
+{
+  "name": "near-target-sell-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.18.3",
+  "engines": { "node": ">=24", "pnpm": ">=10 <11" },
+  "scripts": {
+    "setup": "node src/cli.ts setup",
+    "import": "node src/cli.ts import",
+    "review": "node src/cli.ts resolve",
+    "dev": "node src/cli.ts start",
+    "dev:live": "node src/cli.ts start --live",
+    "start": "pnpm run build && node dist/cli.js start",
+    "start:live": "pnpm run build && node dist/cli.js start --live",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --test-isolation=none test/*.test.ts",
+    "check": "pnpm run typecheck && pnpm run build && pnpm test",
+    "check:public": "node scripts/check-public.ts"
+  },
+  "dependencies": {
+    "bip39-light": "1.0.7",
+    "decimal.js": "10.6.0",
+    "near-api-js": "7.3.1",
+    "near-seed-phrase": "0.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "typescript": "5.9.3"
+  }
+}
