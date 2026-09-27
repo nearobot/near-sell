@@ -1,0 +1,64 @@
+{
+  "source": "https://free.rpc.fastnear.com",
+  "note": "Public response excerpts at one final mainnet block; token icons and unrelated factory fields omitted.",
+  "block": {
+    "hash": "Cno8JNZqCZNV9jyPzQ7UaUZnsSrwbTopSjVLxosgGyPp",
+    "height": 217472022,
+    "at": 1790503767457
+  },
+  "launch": {
+    "id": 262,
+    "token": "nillions.nearlytrade.near",
+    "quote": "wrap.near",
+    "total_supply": "1000000000000000000000000000",
+    "pool_id": "nillions.nearlytrade.near|wrap.near|10000",
+    "step": "Done",
+    "inflight": true
+  },
+  "pool": {
+    "pool_id": "nillions.nearlytrade.near|wrap.near|10000",
+    "token_x": "nillions.nearlytrade.near",
+    "token_y": "wrap.near",
+    "fee": 10000,
+    "point_delta": 200,
+    "current_point": 219,
+    "liquidity": "50498695734733140569374",
+    "liquidity_x": "24038581402560434848365",
+    "max_liquidity_per_point": "42529979617665099795447395004595452",
+    "total_fee_x_charged": "64392277107948496620112",
+    "total_fee_y_charged": "70000000000000000000000",
+    "volume_x_in": "32196138553974248310056081",
+    "volume_y_in": "35000000000000000000000000",
+    "volume_x_out": "32849850580526730241869278",
+    "volume_y_out": "33653694733633169940722091",
+    "total_liquidity": "50498695734733140569374",
+    "total_order_x": "0",
+    "total_order_y": "0",
+    "total_x": "999088718865015724081705307",
+    "total_y": "1066305266366830059277910",
+    "state": "Running"
+  },
+  "metadata": {
+    "name": "Nillions",
+    "symbol": "NILLIONS",
+    "decimals": 18
+  },
+  "tax": {
+    "buy_bps": 100,
+    "sell_bps": 100,
+    "creator_bps": 3300,
+    "burn_bps": 3300,
+    "holders_bps": 3400,
+    "platform_bps": 2000,
+    "pending": "0",
+    "holders_bucket": "0",
+    "burned": "0",
+    "paid_creator": "0",
+    "paid_holders": "0",
+    "paid_platform": "0"
+  },
+  "quote": {
+    "amount": "1001799851157187628869",
+    "tag": null
+  }
+}

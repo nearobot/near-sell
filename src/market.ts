@@ -1,8 +1,9 @@
-import type { RpcPort, FetchLike, TokenMetadata, PriceList, Block, AccountState, Holding, Portfolio, Pricing, NearlyLaunch, CurveState, SimplePool, Snapshot, TargetConfig, SellPlan, CurvePlan, FtPlan, RegistrationPlan } from './types.ts';
+import type { RpcPort, FetchLike, TokenMetadata, PriceList, Block, AccountState, Holding, Portfolio, Pricing, NearlyLaunch, DclPool, CurveState, SimplePool, Snapshot, TargetConfig, SellPlan, CurvePlan, FtPlan, RegistrationPlan } from './types.ts';
 import { D, DCL, RHEA, WNEAR, AppError, assert, accountId, unsigned, human, minOut, impactBps, curveQuote } from './core.ts';
 import { jsonRequest, mapLimit } from './network.ts';
 
 export type QuoteTarget = Pick<TargetConfig, 'account' | 'token' | 'settlement' | 'slippageBps' | 'maxImpactBps'>;
+const stateName = (value: unknown) => typeof value === 'string' && /^[A-Za-z_]{1,40}$/.test(value) ? value : 'unknown';
 export class Market {
  rpc: RpcPort; fetchImpl: FetchLike; fastnearApiKey: string;
  cache = new Map<string, TokenMetadata>(); ratesCache?: {prices: PriceList; at: number};
@@ -65,11 +66,18 @@ export class Market {
     accountId(token); const meta = await this.metadata(token, block);
     if (token.endsWith('.nearlytrade.near')) {
       const launch = await this.rpc.view<NearlyLaunch>('nearlytrade.near', 'get_launch_by_token', { token }, block);
-      assert(launch?.token === token && launch.step === 'Done' && !launch.inflight, 'This Nearly launch is not ready for trading.', 'NO_ROUTE');
+      assert(launch, `Nearly has no launch record for ${token}.`, 'NO_ROUTE');
+      assert(launch.token === token, `Nearly returned a different launch for ${token}. Waiting for verified data.`, 'BAD_DATA');
+      assert(launch.step === 'Done', `Nearly launch ${token} is not complete (step: ${stateName(launch.step)}).`, 'NO_ROUTE');
+      // Completed launches can have inflight=true while their DCL pool still trades.
+      // Verify the completed launch and actual pool instead of treating the factory flag as a trading lock.
       const pair = String(launch.quote || WNEAR); accountId(pair);
-      const pool = await this.rpc.view<{current_point: number}>(DCL, 'get_pool', { pool_id: launch.pool_id }, block);
+      assert(typeof launch.pool_id === 'string', `Nearly pool is missing for ${token}.`, 'NO_ROUTE');
       const parts = launch.pool_id.split('|');
-      assert(parts.length === 3 && parts.slice(0, 2).includes(token) && parts.slice(0, 2).includes(pair), 'Unexpected DCL pool assets.', 'BAD_DATA');
+      assert(parts.length === 3 && parts[0] !== parts[1] && parts.slice(0, 2).includes(token) && parts.slice(0, 2).includes(pair), 'Unexpected DCL pool assets.', 'BAD_DATA');
+      const pool = await this.rpc.view<DclPool>(DCL, 'get_pool', { pool_id: launch.pool_id }, block);
+      assert(pool?.pool_id === launch.pool_id && pool.token_x === parts[0] && pool.token_y === parts[1], `DCL pool identity could not be verified for ${token}.`, 'BAD_DATA');
+      assert(pool.state === 'Running', `Nearly pool for ${token} is not running (state: ${stateName(pool.state)}).`, 'NO_ROUTE');
       assert(Number.isInteger(pool.current_point) && Math.abs(pool.current_point) <= 800000, 'Invalid DCL pool price.', 'BAD_DATA');
       const pairMeta = await this.metadata(pair, block), usd = await this.usd(pair);
       let price = new D('1.0001').pow(pool.current_point);

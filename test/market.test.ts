@@ -3,12 +3,57 @@ import type { Snapshot } from '../src/types.ts';
 import { rpcStub, testSnapshot } from './helpers.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { Market } from '../src/market.ts';
 import { raw, DCL, RHEA } from '../src/core.ts';
 import { Rpc } from '../src/network.ts';
 
 const target: QuoteTarget = { account: 'alice.near', token: 'test.nearlytrade.near', settlement: 'pair', slippageBps: 200, maxImpactBps: 5000 };
 const snap = testSnapshot({ priceUsd: '1', route: {kind:'dcl', token: target.token, exchange: DCL, poolId:'test.nearlytrade.near|wrap.near|10000',output:'wrap.near',outSymbol:'wNEAR',outDecimals:24,outUsd:'1',sellTaxBps:100} });
+const inflightFixture=JSON.parse(fs.readFileSync(new URL('./fixtures/public-nearly-inflight.json',import.meta.url),'utf8'));
+function nearlyMarket(launch: unknown=inflightFixture.launch,pool: unknown=inflightFixture.pool){
+  const rpc=rpcStub({view:async(contract,method)=>{
+    if(method==='ft_metadata')return contract==='wrap.near'?{name:'Wrapped NEAR',symbol:'wNEAR',decimals:24}:inflightFixture.metadata;
+    if(method==='get_launch_by_token')return launch;
+    if(method==='get_pool')return pool;
+    if(method==='get_tax')return inflightFixture.tax;
+    if(method==='quote')return inflightFixture.quote;
+    if(method==='storage_balance_of')return{total:'1'};
+    throw new Error('Unexpected view: '+method);
+  }});
+  return new Market(rpc,{fetchImpl:async()=>({ok:true,status:200,json:async()=>({'wrap.near':{price:'1',decimal:24,symbol:'wNEAR'}})})});
+}
+
+test('completed Nearly launch remains tradable while factory inflight is true',async()=>{
+  const market=nearlyMarket(),token=inflightFixture.launch.token;
+  assert.equal(inflightFixture.launch.step,'Done');assert.equal(inflightFixture.launch.inflight,true);
+  const details=await market.details(token,inflightFixture.block);
+  const snapshot: Snapshot={...testSnapshot(),...details,token,block:inflightFixture.block};
+  const quote=await market.quote({...target,token},snapshot,raw('1000',details.decimals));
+  assert.equal(quote.expectedOut,inflightFixture.quote.amount);assert.equal(quote.output,'wrap.near');
+  assert.equal(quote.kind,'ft');assert.equal(details.route.kind,'dcl');
+});
+
+test('Nearly still rejects missing, mismatched, failed and unfinished launches',async()=>{
+  const token=inflightFixture.launch.token,block=inflightFixture.block;
+  await assert.rejects(nearlyMarket(null).details(token,block),/no launch record/);
+  await assert.rejects(nearlyMarket({...inflightFixture.launch,token:'other.nearlytrade.near'}).details(token,block),/different launch/);
+  for(const step of ['Failed','Deploying','Pending',undefined,{}]){
+    for(const inflight of [true,false]){
+      await assert.rejects(nearlyMarket({...inflightFixture.launch,step,inflight}).details(token,block),/is not complete \(step:/);
+    }
+  }
+});
+
+test('completed Nearly launches require a running DCL pool with the exact pair identity',async()=>{
+  const token=inflightFixture.launch.token,block=inflightFixture.block;
+  for(const pool of [null,{...inflightFixture.pool,pool_id:'wrong'}, {...inflightFixture.pool,token_x:'other.nearlytrade.near'}, {...inflightFixture.pool,token_y:'other.near'}]){
+    await assert.rejects(nearlyMarket(inflightFixture.launch,pool).details(token,block),/pool identity/);
+  }
+  for(const state of ['Paused','Stopped',undefined]){
+    await assert.rejects(nearlyMarket(inflightFixture.launch,{...inflightFixture.pool,state}).details(token,block),/is not running \(state:/);
+  }
+});
 test('Nearly sell tax is deducted before DCL quote; full amount is passed to ft_transfer_call',async()=>{
   const calls: {c: string; m: string; a: Record<string, unknown>}[] = [];
   const rpc=rpcStub({view:async(c,m,a)=>{calls.push({c,m,a});if(m==='quote')return {amount:raw('98').toString()};if(m==='storage_balance_of')return{total:raw('0.00125').toString()};throw new Error(m);}});

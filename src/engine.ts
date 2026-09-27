@@ -1,12 +1,12 @@
 import type { Store } from './store.ts';
 import type { Market } from './market.ts';
 import type { Executor } from './executor.ts';
-import type { Mode, Plan, TargetInput, TransactionResult, RpcPort } from './types.ts';
-import { AppError, assert, validateTarget, quantity, reached, safeError } from './core.ts';
+import type { Mode, Plan, Target, TargetInput, TokenMetadata, TransactionResult, RpcPort } from './types.ts';
+import { AppError, assert, validateTarget, quantity, reached, safeError, tokenText, tokenTitle } from './core.ts';
 import { outcome } from './executor.ts';
 
 export interface EngineDependencies {
- store: Store; market: Pick<Market, 'snapshot' | 'quote'>;
+ store: Store; market: Pick<Market, 'snapshot' | 'quote' | 'metadata'>;
  executor: Pick<Executor, 'hasKey' | 'prepare' | 'sign' | 'broadcast'> & {rpc: Pick<RpcPort, 'status'>};
  mode?: Mode; notify?: (text: string) => Promise<unknown>;
 }
@@ -17,6 +17,26 @@ export class Engine {
     this.store = store; this.market = market; this.executor = executor; this.mode = mode; this.notify = notify; this.busy = false; this.stopping = false;
   }
   async announce(text: string) { try { await this.notify(text); } catch { /* Delivery must never alter transaction state. */ } }
+  private rememberName(target: Target, metadata: Pick<TokenMetadata, 'name' | 'symbol'>) {
+    const current = this.store.target(target.id) ?? target;
+    const tokenName = current.tokenName || tokenText(metadata.name, 80), tokenSymbol = current.tokenSymbol || tokenText(metadata.symbol, 30);
+    if (current.tokenName === tokenName && current.tokenSymbol === tokenSymbol) return current;
+    return this.store.change(current.id, [current.status], { tokenName, tokenSymbol });
+  }
+  async describeTarget(target: Target): Promise<Target> {
+    const current = this.store.target(target.id) ?? target;
+    if (current.tokenName && current.tokenSymbol) return current;
+    try { return this.rememberName(current, await this.market.metadata(current.token)); }
+    catch { return this.store.target(target.id) ?? current; /* Missing display metadata must not hide a target or its error. */ }
+  }
+  private async announceTarget(target: Target, status: string, detail: string) {
+    const named = await this.describeTarget(target);
+    return this.announce(`${tokenTitle(named)} · ${named.mode.toUpperCase()}\nTarget ${named.id} · ${status}\n${named.token}\n\n${detail}`);
+  }
+  private clearWaitingError(id: string) {
+    const current = this.store.target(id);
+    if (current?.status === 'active' && current.lastError) this.store.change(id, ['active'], { lastError: null, lastCheckedAt: Date.now() });
+  }
   async create(input: TargetInput) {
     assert(this.store.wallets().includes(input.account), 'Select an imported or watched wallet first.');
     if (this.mode === 'live') assert(this.executor.hasKey(input.account), 'Import this wallet locally before creating live targets.');
@@ -24,7 +44,7 @@ export class Engine {
     const snapshot = await this.market.snapshot(t.account, t.token);
     const amount = quantity(t.quantity, BigInt(snapshot.balanceRaw), snapshot.decimals);
     const plan = await this.market.quote(t, snapshot, amount);
-    const target = this.store.createTarget(t);
+    const target = this.store.createTarget({ ...t, tokenName: tokenText(snapshot.name, 80), tokenSymbol: tokenText(snapshot.symbol, 30) });
     this.store.track(t.account, t.token);
     return { target, snapshot, plan, alreadyReached: reached(t, snapshot) };
   }
@@ -45,13 +65,14 @@ export class Engine {
         if (this.store.pending(t.account)) continue;
         try {
           let snapshot = await this.market.snapshot(t.account, t.token);
-          if (!reached(t, snapshot)) continue;
+          if (!t.tokenName || !t.tokenSymbol) this.rememberName(t, snapshot);
+          if (!reached(t, snapshot)) { this.clearWaitingError(t.id); continue; }
           let amount = quantity(t.quantity, BigInt(snapshot.balanceRaw), snapshot.decimals);
           let plan: Plan = await this.market.quote(t, snapshot, amount);
           // Recheck balance, trigger, route and quote after preflight before claiming the target.
           let prepared = this.mode === 'live' ? await this.executor.prepare(plan.registration || plan) : null;
           snapshot = await this.market.snapshot(t.account, t.token);
-          if (!reached(t, snapshot)) continue;
+          if (!reached(t, snapshot)) { this.clearWaitingError(t.id); continue; }
           amount = quantity(t.quantity, BigInt(snapshot.balanceRaw), snapshot.decimals);
           plan = await this.market.quote(t, snapshot, amount);
           if (this.mode === 'live') {
@@ -66,7 +87,7 @@ export class Engine {
           const execution = this.store.begin(current, plan);
           if (this.mode === 'paper') {
             this.store.finish(execution.id, 'simulated', { reason: 'Paper target triggered. No transaction was signed or sent.' });
-            await this.announce(`PAPER target ${t.id} triggered for ${plan.symbol}. Simulated once; no tokens were sold.`); continue;
+            await this.announceTarget(current, 'Simulated', 'Paper target triggered. Simulated once; no tokens were sold.'); continue;
           }
           let signed;
           try {
@@ -84,13 +105,13 @@ export class Engine {
           } catch(e) {
             if (e instanceof AppError && e.code === 'INVALID_TRANSACTION') this.store.finish(execution.id, 'rejected', { reason: safeError(e) });
             else this.store.updateExecution(execution.id, { status: 'pending', reason: 'Submission outcome is unknown. Check this hash; do not repeat the sell.' });
-            await this.announce(`Target ${t.id}: ${e instanceof AppError && e.code === 'INVALID_TRANSACTION' ? 'transaction rejected' : 'awaiting transaction confirmation'}.\nhttps://nearblocks.io/txns/${signed.hash}`);
+            await this.announceTarget(current, e instanceof AppError && e.code === 'INVALID_TRANSACTION' ? 'Transaction rejected' : 'Awaiting transaction confirmation', `https://nearblocks.io/txns/${signed.hash}`);
           }
         } catch(e) {
           const message = safeError(e), latest = this.store.target(t.id);
           if (latest?.status === 'active') {
             this.store.note(t.id, message);
-            if (latest.lastError !== message) await this.announce(`Target ${t.id} is waiting: ${message}`);
+            if (latest.lastError !== message) await this.announceTarget(latest, 'Waiting', message);
           }
         }
       }
@@ -102,7 +123,9 @@ export class Engine {
     if (checked.status === 'pending') { this.store.updateExecution(id, { status: 'pending' }); return; }
     if (checked.status === 'uncertain') { this.store.updateExecution(id, checked); return; }
     this.store.finish(id, checked.status, checked);
-    await this.announce(`Target ${e.targetId}: ${checked.status === 'filled' ? 'sell confirmed' : checked.status}.\n${checked.reason || (checked.status === 'registered' ? 'Pair-asset registration confirmed. The sell trigger will be rechecked.' : 'Payout verified in final transaction receipts.')}\nhttps://nearblocks.io/txns/${e.hash}`);
+    const target = this.store.target(e.targetId); assert(target, 'Target not found.');
+    await this.announceTarget(target, checked.status === 'filled' ? 'Sell confirmed' : checked.status,
+      `${checked.reason || (checked.status === 'registered' ? 'Pair-asset registration confirmed. The sell trigger will be rechecked.' : 'Payout verified in final transaction receipts.')}\nhttps://nearblocks.io/txns/${e.hash}`);
   }
   async reconcile() {
     for (const e of this.store.executions().filter(e => ['signed', 'pending', 'uncertain'].includes(e.status) && e.hash)) {

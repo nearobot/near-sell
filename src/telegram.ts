@@ -3,7 +3,7 @@ import type { FetchLike, Holding, InlineButton, InlineKeyboard, MessageOptions, 
 import type { Store } from './store.ts';
 import type { Market } from './market.ts';
 import type { Engine } from './engine.ts';
-import { AppError, assert, accountId, decimal, parseQuantity, money, human, compact, measure, safeError } from './core.ts';
+import { AppError, assert, accountId, decimal, parseQuantity, money, human, compact, measure, safeError, tokenTitle } from './core.ts';
 import { jsonRequest } from './network.ts';
 
 const hash = (value: string) => crypto.createHash('sha256').update(value).digest('hex').slice(0, 12);
@@ -17,7 +17,6 @@ const keyboard = (rows: InlineButton[][]): InlineKeyboard => ({ inline_keyboard:
 const homeButton = () => button('⌂ Home', 'home');
 const footer = (back?: InlineButton): InlineButton[] => back ? [back, homeButton()] : [homeButton()];
 const short = (text: string, length = 24) => text.length > length ? text.slice(0, length - 1) + '…' : text;
-const tokenLabel = (token: string) => token.replace(/\.(nearlytrade|umbrafun)\.near$/, '');
 const pageNumber = (value = '0') => /^\d{1,6}$/.test(value) ? Number(value) : 0;
 const statusLabel: Record<string, string> = {
   draft: '📝 Ready to activate', active: '🟢 Watching', paused: '⏸ Paused', executing: '⏳ Processing',
@@ -54,7 +53,7 @@ export function authorized(update: TelegramUpdate, owner: string | number) {
 }
 
 export function targetText(t: Target) {
-  return `<b>${escapeHtml(tokenLabel(t.token))}</b> · ${stateLabel(t.status)}\n${code(t.token)}\n\n` +
+  return `<b>${escapeHtml(tokenTitle(t))}</b> · ${stateLabel(t.status)}\n${code(t.token)}\n\n` +
     `Trigger  ${t.metric === 'marketcap' ? 'Market cap (FDV)' : 'All my holdings in this token'}\n` +
     `${t.direction === 'gte' ? '↗ At or above' : '↘ At or below'} <b>${money(t.threshold)}</b>\n` +
     `Sell  <b>${escapeHtml(formatQuantity(t))}</b>\n\nWallet  ${code(t.account)}\n` +
@@ -66,7 +65,7 @@ export function targetText(t: Target) {
 export interface BotDependencies {
   telegram: TelegramPort; owner: string | number; store: Store;
   market: Pick<Market, 'portfolio' | 'metadata' | 'snapshot' | 'rpc'>;
-  engine: Pick<Engine, 'mode' | 'executor' | 'create' | 'arm' | 'reconcile'>;
+  engine: Pick<Engine, 'mode' | 'executor' | 'create' | 'arm' | 'reconcile' | 'describeTarget'>;
 }
 type Step = 'metric' | 'direction' | 'threshold' | 'quantity';
 interface TargetFlow {
@@ -316,7 +315,8 @@ export class Bot {
   }
   async targetDetails(id: string, note = '') {
     this.flow = null;
-    const t = this.store.target(id); assert(t, 'This target no longer exists. Open My targets.');
+    const stored = this.store.target(id); assert(stored, 'This target no longer exists. Open My targets.');
+    const t = await this.engine.describeTarget(stored);
     const expiry = t.status === 'draft' && Date.now() - t.createdAt >= 15 * 60000 ? '\n\n⌛ Draft expired. Create a new target for a fresh quote.' : '';
     return this.send(`<b>🎯 TARGET DETAILS</b>\n\n${targetText(t)}${expiry}` +
       (t.status === 'draft' ? this.activationTerms(t) : '') + (note ? `\n\n${escapeHtml(note)}` : ''), this.targetButtons(t));
@@ -329,10 +329,11 @@ export class Bot {
     const rows: InlineButton[][] = [[button(`${filter === 'open' ? '✓ ' : ''}Open`, 'targets:0:open'), button(`${filter === 'all' ? '✓ ' : ''}All`, 'targets:0:all')]];
     let text = `<b>📋 MY TARGETS · ${this.engine.mode.toUpperCase()}</b>\n${items.length} ${filter === 'all' ? 'total' : 'open'} targets · Page ${page + 1}/${last + 1}\n`;
     if (this.store.setting('paused', false)) text += '\n⏸ Monitoring paused. Resume from Home to run active rules.\n';
-    for (const t of items.slice(page * 5, page * 5 + 5)) {
-      text += `\n<b>${escapeHtml(short(tokenLabel(t.token), 28))}</b> · ${stateLabel(t.status)}\n` +
+    const visible = await Promise.all(items.slice(page * 5, page * 5 + 5).map(t => this.engine.describeTarget(t)));
+    for (const t of visible) {
+      text += `\n<b>${escapeHtml(tokenTitle(t))}</b> · ${stateLabel(t.status)}\n` +
         `${t.metric === 'marketcap' ? 'Market cap' : 'My holdings'} ${t.direction === 'gte' ? '≥' : '≤'} ${money(t.threshold)} → ${escapeHtml(t.quantity.value)}${t.quantity.kind === 'percent' ? '%' : ' tokens'}\n`;
-      rows.push([button(`${short(tokenLabel(t.token), 22)} · ${stateLabel(t.status)}`, 'target:' + t.id)]);
+      rows.push([button(`${short(t.tokenSymbol || tokenTitle(t), 22)} · ${stateLabel(t.status)}`, 'target:' + t.id)]);
     }
     if (!items.length) text += '\nYour targets will appear here. Choose a token to create one.';
     if (last > 0) rows.push([button('‹ Previous', `targets:${Math.max(0, page - 1)}:${filter}`), button('Next ›', `targets:${Math.min(last, page + 1)}:${filter}`)]);
@@ -343,8 +344,12 @@ export class Bot {
     this.flow = null;
     const all = this.store.executions(), last = Math.max(0, Math.ceil(all.length / 4) - 1); page = Math.min(page, last);
     let text = `<b>🧾 ACTIVITY</b>\nPage ${page + 1}/${last + 1}\n`;
-    for (const e of all.slice(page * 4, page * 4 + 4)) {
-      text += `\n<b>${escapeHtml(short(e.plan.symbol, 30))} → ${escapeHtml(short(e.plan.outSymbol, 30))}</b>\n${stateLabel(e.status)} · Target ${code(e.targetId)}\n`;
+    const visible = await Promise.all(all.slice(page * 4, page * 4 + 4).map(async e => {
+      const target = this.store.target(e.targetId);
+      return { e, named: target ? await this.engine.describeTarget(target) : { token: e.plan.token, tokenSymbol: e.plan.symbol } };
+    }));
+    for (const { e, named } of visible) {
+      text += `\n<b>${escapeHtml(tokenTitle(named))} → ${escapeHtml(short(e.plan.outSymbol, 30))}</b>\n${stateLabel(e.status)} · Target ${code(e.targetId)}\n`;
       if (e.reason) text += escapeHtml(short(e.reason, 220)) + '\n';
       if (e.hash && /^[1-9A-HJ-NP-Za-km-z]{32,64}$/.test(e.hash)) text += `<a href="https://nearblocks.io/txns/${e.hash}">View transaction ↗</a>\n`;
     }

@@ -36,6 +36,10 @@ pm2 logs 0 --lines 30
 
 If an older version reports **“Target … is waiting: Invalid on-chain token amount”** during live preflight, update the source and rebuild/restart using the commands above. This version fixes the NEAR storage-price response path (`runtime_config.storage_amount_per_byte`) and reports specific fields for invalid balances, prices or quotes. Existing active targets are checked again automatically after restart; keep the existing `data/` directory.
 
+An older version could also report **“This Nearly launch is not ready for trading”** for a completed launch with the factory's `inflight` flag set. Readiness now checks `step=Done` and verifies that the exact DCL pair is `Running`. Failed or incomplete launches remain blocked. Waiting notices include the token and mode, and obsolete errors clear when monitoring successfully returns to waiting for the target value.
+
+Target reviews, lists, details, activity and notifications show the token name and symbol alongside the target ID. New targets save `tokenName` and `tokenSymbol` with the rule; older targets fill these display fields from token metadata when viewed or monitored. Metadata lookup failure leaves the contract visible and does not suppress an error or trade confirmation. The stored fields can also be included in read-only terminal queries of the target's JSON body.
+
 ## Environment and run commands
 
 Both commands automatically read the project-root `.env`, including when the CLI is launched from another directory. Existing process environment variables override `.env` values. Restart the bot after changing configuration.

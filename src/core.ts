@@ -1,4 +1,4 @@
-import type { Quantity, TargetConfig, Valuation, CurveState } from './types.ts';
+import type { Quantity, TargetConfig, Valuation, CurveState, Target } from './types.ts';
 import { Decimal } from 'decimal.js';
 export const D = Decimal.clone({ precision: 90, rounding: Decimal.ROUND_DOWN, toExpNeg: -90, toExpPos: 90 });
 export const WNEAR = 'wrap.near';
@@ -62,6 +62,11 @@ export function impactBps(amount: string | bigint, decimals: number, priceUsd: s
 }
 export const money = (n: Decimal.Value | null | undefined) => n == null ? 'unpriced' : '$' + new D(n).toFixed(2);
 export const compact = (n: Decimal.Value) => new D(n).toSignificantDigits(8).toFixed();
+export const tokenText = (value: unknown, max: number) => typeof value === 'string' ? value.replace(/[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/g, '').trim().slice(0, max) : '';
+export function tokenTitle(t: Pick<Target, 'token' | 'tokenName' | 'tokenSymbol'>) {
+  const name = tokenText(t.tokenName, 80), symbol = tokenText(t.tokenSymbol, 30);
+  return name && symbol && name.toLowerCase() !== symbol.toLowerCase() ? `${name} (${symbol})` : symbol || name || t.token.replace(/\.(nearlytrade|umbrafun)\.near$/, '');
+}
 export const safeError = (e: unknown) => e instanceof AppError ? e.message : 'The operation failed. Check configuration or retry after the provider recovers.';
 export function curveQuote(state: Pick<CurveState, 'graduated' | 'real_reserve' | 'virtual_reserve' | 'curve_tokens' | 'fee_bps'>, amount: bigint) {
   assert(state.graduated === false, 'This curve has graduated. Refresh the route.', 'ROUTE_CHANGED');

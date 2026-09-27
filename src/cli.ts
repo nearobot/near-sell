@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import readline from 'node:readline';
 import * as near from 'near-api-js';
-import { AppError, assert, accountId, safeError } from './core.ts';
+import { AppError, assert, accountId, safeError, tokenTitle } from './core.ts';
 import { loadVault, saveVault, deriveWallet, verifyKey } from './vault.ts';
 import { Rpc, jsonRequest } from './network.ts';
 import { Market } from './market.ts';
@@ -130,7 +130,7 @@ async function resolve(config: Config) {
   const store = new Store(path.join(dataDir, 'bot.sqlite'));
   try {
     const items = store.executions().filter(e => ['needs_review', 'pending', 'signed', 'uncertain'].includes(e.status));
-    for (const e of items) console.log(`${e.id}: ${e.status} ${e.plan.symbol} → ${e.plan.outSymbol}\nhttps://nearblocks.io/txns/${e.hash}`);
+    for (const e of items) console.log(`${e.id}: ${e.status} ${tokenTitle(store.target(e.targetId) ?? { token: e.plan.token, tokenSymbol: e.plan.symbol })} → ${e.plan.outSymbol}\nhttps://nearblocks.io/txns/${e.hash}`);
     assert(items.length, 'No unresolved executions.');
     const id = await ask('Execution ID you reviewed: '), e = items.find(e => e.id === id); assert(e, 'Execution not found.');
     assert(e.hash, 'Execution has no transaction hash to review.');

@@ -33,7 +33,7 @@ export class Store {
   tracked(account: string) { return this.db.prepare('SELECT token FROM tracked WHERE account=?').all(account).map(x => String(x.token)); }
   target(id: string): Target | null { const r = this.db.prepare('SELECT body FROM targets WHERE id=?').get(id); return r ? JSON.parse(String(r.body)) : null; }
   targets(): Target[] { return this.db.prepare('SELECT body FROM targets ORDER BY rowid DESC').all().map(x => JSON.parse(String(x.body))); }
-  createTarget(input: TargetConfig) {
+  createTarget(input: TargetConfig & Pick<Target, 'tokenName' | 'tokenSymbol'>) {
     const t: Target = { ...validateTarget(input), id: crypto.randomBytes(6).toString('hex'), status: 'draft', createdAt: Date.now(), expiresAt: Date.now() + 30 * 86400000 };
     this.db.prepare('INSERT INTO targets VALUES (?,?,?,?)').run(t.id, t.status, t.account, JSON.stringify(t)); return t;
   }

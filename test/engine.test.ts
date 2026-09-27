@@ -19,7 +19,7 @@ const protocolConfig = JSON.parse(fs.readFileSync(new URL('./fixtures/public-pro
 const final = () => ({ final_execution_status:'FINAL', status:{SuccessValue:Buffer.from(JSON.stringify(raw('25').toString())).toString('base64')}, receipts_outcome:[] });
 function harness(mode: Mode = 'live') {
   const store=new Store(); store.addWallet('alice.near'); let broadcasts=0, signs=0;
-  const market: EngineDependencies['market'] = {snapshot:async()=>snapshot(),quote:async(t,s,a)=>plan(a)};
+  const market: EngineDependencies['market'] = {snapshot:async()=>snapshot(),quote:async(t,s,a)=>plan(a),metadata:async()=>({name:'Test',symbol:'TEST',decimals:18})};
   const executor: EngineDependencies['executor'] = {hasKey:()=>true,prepare:async()=>testPrepared(),sign:async()=>{signs++;return {hash:'synthetic-hash',payload:'synthetic-payload'};},broadcast:async()=>{broadcasts++;return final();},rpc:{status:async()=>final()}};
   const engine=new Engine({store,market,executor,mode});
   return {store,market,executor,engine,get broadcasts(){return broadcasts;},get signs(){return signs;}};
@@ -56,6 +56,47 @@ test('replayed activation callback is rejected',async()=>{
 });
 test('unknown price and failed quote do not sign or imply zero balance',async()=>{
   const h=harness();await arm(h);h.market.snapshot=async()=>({...snapshot(),priceUsd:null} as unknown as Snapshot);await h.engine.tick();assert.equal(h.signs,0);assert.match(h.store.targets()[0].lastError ?? '',/price/);h.store.close();
+});
+
+test('waiting notices identify the token and mode; a recovered route clears an obsolete error',async t=>{
+  const h=harness();t.after(()=>h.store.close());const target=await arm(h),notices: string[]=[];
+  assert.equal(target.tokenName,'Test');assert.equal(target.tokenSymbol,'TEST');
+  h.engine.notify=async text=>{notices.push(text);};
+  h.market.snapshot=async()=>{throw new AppError('Nearly launch is temporarily unavailable.','NO_ROUTE');};
+  await h.engine.tick();await h.engine.tick();
+  assert.equal(notices.length,1);assert.ok(notices[0].includes(target.token));assert.match(notices[0],/TEST · LIVE/);
+  assert.match(h.store.target(target.id)?.lastError??'',/temporarily unavailable/);
+  h.market.snapshot=async()=>snapshot({priceUsd:'0.1'});
+  await h.engine.tick();
+  assert.equal(h.store.target(target.id)?.lastError,null);assert.equal(h.store.target(target.id)?.status,'active');
+  assert.equal(h.signs,0);assert.equal(h.broadcasts,0);
+});
+
+test('legacy target names load even when the route fails without changing the target rules or state',async t=>{
+  const h=harness();t.after(()=>h.store.close());const target=h.store.createTarget(targetInput),notices: string[]=[];
+  h.engine.arm(target.id);h.engine.notify=async text=>{notices.push(text);};
+  h.market.metadata=async()=>({name:'The Black Dragon',symbol:'ILLIA',decimals:18});
+  h.market.snapshot=async()=>{throw new AppError('Route unavailable.','NO_ROUTE');};
+  await h.engine.tick();
+  assert.match(notices[0],/^The Black Dragon \(ILLIA\) · LIVE/);assert.ok(notices[0].includes(target.id));
+  const saved=h.store.target(target.id)!;
+  assert.equal(saved.tokenName,'The Black Dragon');assert.equal(saved.tokenSymbol,'ILLIA');
+  assert.equal(saved.status,'active');assert.equal(saved.threshold,target.threshold);assert.deepEqual(saved.quantity,target.quantity);
+  assert.equal(h.signs,0);assert.equal(h.broadcasts,0);
+  h.market.metadata=async()=>{throw new Error('Metadata provider offline');};
+  await h.engine.describeTarget(saved);assert.equal(h.store.target(target.id)?.tokenName,'The Black Dragon');
+});
+
+test('missing legacy metadata cannot hide errors or prevent a final sell confirmation',async t=>{
+  const h=harness();t.after(()=>h.store.close());const target=h.store.createTarget(targetInput),notices: string[]=[];
+  h.engine.arm(target.id);h.engine.notify=async text=>{notices.push(text);};
+  h.market.metadata=async()=>{throw new Error('Metadata unavailable');};
+  h.market.snapshot=async()=>{throw new AppError('Route unavailable.','NO_ROUTE');};
+  await h.engine.tick();assert.match(notices[0],/Route unavailable/);assert.ok(notices[0].includes(target.token));
+  const execution=h.store.begin(h.store.target(target.id)!,plan());
+  await h.engine.accept(execution.id,final());
+  assert.equal(h.store.target(target.id)?.status,'filled');assert.match(notices[1],/Sell confirmed/);
+  assert.ok(notices[1].includes(target.token));assert.equal(h.signs,0);assert.equal(h.broadcasts,0);
 });
 test('SQLite restart keeps a signed pending transaction unresolved',()=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'near-bot-test-')), file=path.join(dir,'state.sqlite');

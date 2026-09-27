@@ -11,6 +11,7 @@ export interface TargetConfig {
 export type TargetInput = Omit<TargetConfig, 'mode' | 'settlement'> & Partial<Pick<TargetConfig, 'mode' | 'settlement'>>;
 export type TargetStatus = 'draft' | 'active' | 'executing' | 'paused' | 'cancelled' | 'expired' | 'filled' | 'refunded' | 'needs_review' | 'simulated' | 'rejected';
 export interface Target extends TargetConfig {
+  tokenName?: string; tokenSymbol?: string;
   id: string; status: TargetStatus; createdAt: number; expiresAt: number; updatedAt?: number;
   executionId?: string; lastError?: string | null; lastCheckedAt?: number; finishedAt?: number;
 }
@@ -72,6 +73,7 @@ export interface AccountState { amount: string; locked: string; storage_usage: n
 export interface ProtocolConfig { runtime_config: { storage_amount_per_byte: string } }
 export interface AccessKey { permission: unknown; nonce: number; block_hash: string }
 export interface NearlyLaunch { token: string; id: number; quote: string; pool_id: string; total_supply: string; step: string; inflight: boolean }
+export interface DclPool { pool_id: string; token_x: string; token_y: string; current_point: number; state: string }
 export interface SimplePool { pool_kind: string; token_account_ids: string[]; amounts: string[] }
 export interface PriceList { [token: string]: { price: string; symbol: string; decimal: number } }
 export interface FetchResponse { ok: boolean; status: number; json(): Promise<unknown> }
